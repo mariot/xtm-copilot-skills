@@ -1,0 +1,151 @@
+services:
+  rsa-key-generator:
+    # RSA key for xtm-composer's manager identity (PKCS#8 format).
+    image: alpine/openssl:latest
+    volumes: [rsa-keys:/keys]
+    entrypoint: ["/bin/ash"]
+    command: ["-c", "if [ ! -f /keys/private_key.pem ]; then openssl genpkey -algorithm RSA -out /keys/private_key.pem -pkeyopt rsa_keygen_bits:4096; fi && tail -f /dev/null"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/keys/private_key.pem"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:8.10.1
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.21
+    environment:
+      discovery.type: single-node
+      xpack.ml.enabled: "false"
+      xpack.security.enabled: "false"
+      thread_pool.search.queue_size: 5000
+      ES_JAVA_OPTS: -Xms${ELASTIC_MEMORY_SIZE:-2g} -Xmx${ELASTIC_MEMORY_SIZE:-2g}
+    volumes: [elasticsearch-data:/usr/share/elasticsearch/data]
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 65536, hard: 65536}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health?wait_for_status=yellow >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 50
+
+  minio:
+    # minio/minio:RELEASE.* tags get delisted from Docker Hub over time and may 403/404.
+    # pgsty/silo:latest is a drop-in S3-compatible replacement that speaks the same API.
+    image: pgsty/silo:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opencti}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opencti-password}
+    command: server /data
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  rabbitmq:
+    image: rabbitmq:4.3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-opencti}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-opencti-password}
+      RABBITMQ_NODENAME: rabbit01@localhost
+    volumes:
+      - type: bind
+        source: ./rabbitmq.conf
+        target: /etc/rabbitmq/rabbitmq.conf
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+  opencti:
+    image: ${OPENCTI_IMAGE:-opencti/platform:rolling}
+    environment:
+      NODE_OPTIONS: --max-old-space-size=8096
+      APP__PORT: 8080
+      APP__BASE_URL: http://localhost:${OPENCTI_PORT:-8080}
+      APP__ADMIN__EMAIL: ${OPENCTI_ADMIN_EMAIL:-admin@opencti.io}
+      APP__ADMIN__PASSWORD: ${OPENCTI_ADMIN_PASSWORD:-OpenCTIDevExp2026}
+      APP__ADMIN__TOKEN: ${OPENCTI_ADMIN_TOKEN:-8c23fc1c-0196-4aa1-8aa1-6e21aae6a1b5}
+      APP__ENCRYPTION_KEY: ${OPENCTI_ENCRYPTION_KEY:-0OhSkm3ZvFgu3KLgGmKbVNafRuwryqeg}
+      APP__HEALTH_ACCESS_KEY: ${OPENCTI_HEALTHCHECK_ACCESS_KEY:-healthcheck-dev-key}
+      REDIS__HOSTNAME: redis
+      REDIS__PORT: 6379
+      ELASTICSEARCH__URL: http://elasticsearch:9200
+      ELASTICSEARCH__NUMBER_OF_REPLICAS: 0
+      MINIO__ENDPOINT: minio
+      MINIO__PORT: 9000
+      MINIO__USE_SSL: "false"
+      MINIO__ACCESS_KEY: ${MINIO_ROOT_USER:-opencti}
+      MINIO__SECRET_KEY: ${MINIO_ROOT_PASSWORD:-opencti-password}
+      RABBITMQ__HOSTNAME: rabbitmq
+      RABBITMQ__PORT: 5672
+      RABBITMQ__PORT_MANAGEMENT: 15672
+      RABBITMQ__MANAGEMENT_SSL: "false"
+      RABBITMQ__USERNAME: ${RABBITMQ_DEFAULT_USER:-opencti}
+      RABBITMQ__PASSWORD: ${RABBITMQ_DEFAULT_PASS:-opencti-password}
+      PROVIDERS__LOCAL__STRATEGY: LocalStrategy
+    ports: ["${OPENCTI_PORT:-8080}:8080"]
+    depends_on:
+      redis: {condition: service_healthy}
+      elasticsearch: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health?health_access_key=${OPENCTI_HEALTHCHECK_ACCESS_KEY:-healthcheck-dev-key}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    image: ${OPENCTI_WORKER_IMAGE:-opencti/worker:rolling}
+    environment:
+      OPENCTI_URL: http://opencti:8080
+      OPENCTI_TOKEN: ${OPENCTI_ADMIN_TOKEN:-8c23fc1c-0196-4aa1-8aa1-6e21aae6a1b5}
+    depends_on:
+      opencti: {condition: service_healthy}
+    deploy:
+      mode: replicated
+      replicas: ${OPENCTI_WORKER_REPLICAS:-2}
+
+  xtm-composer:
+    image: filigran/xtm-composer:latest
+    platform: linux/amd64
+    environment:
+      MANAGER__ID: ${XTM_COMPOSER_ID:-8215614c-7139-422e-b825-b20fd2a13a23}
+      MANAGER__NAME: OpenCTI Dev XTM Composer
+      MANAGER__CREDENTIALS_KEY_FILEPATH: /keys/private_key.pem
+      OPENCTI__ENABLE: "true"
+      OPENCTI__URL: http://opencti:8080
+      OPENCTI__TOKEN: ${OPENCTI_ADMIN_TOKEN:-8c23fc1c-0196-4aa1-8aa1-6e21aae6a1b5}
+      OPENCTI__DAEMON__SELECTOR: docker
+      OPENAEV__ENABLE: "false"
+      # MUST match this compose project's network. ${COMPOSE_PROJECT_NAME} is set
+      # automatically by scripts/spawn-opencti.sh via `docker compose -p`.
+      OPENCTI__DAEMON__DOCKER__NETWORK_MODE: ${COMPOSE_PROJECT_NAME:-opencti-dev}_default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rsa-keys:/keys:ro
+    depends_on:
+      rsa-key-generator: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      opencti: {condition: service_healthy}
+
+volumes:
+  redis-data: {}
+  elasticsearch-data: {}
+  minio-data: {}
+  rabbitmq-data: {}
+  rsa-keys: {}

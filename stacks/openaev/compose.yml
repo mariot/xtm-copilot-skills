@@ -1,0 +1,145 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openaev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openaev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-openaev}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openaev} -d ${POSTGRES_DB:-openaev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    # minio/minio:RELEASE.* tags get delisted from Docker Hub over time and may 403/404.
+    # pgsty/silo:latest is a drop-in S3-compatible replacement that speaks the same API.
+    image: pgsty/silo:latest
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-openaev}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-rabbitmq-password}
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.19.12
+    environment:
+      discovery.type: single-node
+      xpack.ml.enabled: "false"
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g -XX:+IgnoreUnrecognizedVMOptions -XX:UseSVE=0
+    volumes: [elasticsearch-data:/usr/share/elasticsearch/data]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health?wait_for_status=yellow >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  mailpit:
+    # Catches outbound mail from OpenAEV / email-family injectors — no real SMTP needed.
+    image: axllent/mailpit:latest
+    ports: ["${MAILPIT_WEB_PORT:-8026}:8025", "${MAILPIT_SMTP_PORT:-1026}:1025"]
+
+  rsa-key-generator:
+    # XTM Composer requires an RSA keypair for its manager identity.
+    image: alpine/openssl:latest
+    volumes: [rsa-keys:/keys]
+    entrypoint: ["/bin/ash"]
+    command: ["-c", "if [ ! -f /keys/private_key.pem ]; then openssl genpkey -algorithm RSA -out /keys/private_key.pem -pkeyopt rsa_keygen_bits:4096; fi && tail -f /dev/null"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/keys/private_key.pem"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  openaev:
+    image: ${OPENAEV_IMAGE:-openaev/platform:rolling}
+    environment:
+      OPENAEV_BASE-URL: http://localhost:${OPENAEV_PORT:-8081}
+      OPENAEV_AUTH-LOCAL-ENABLE: "true"
+      # Must be a real-looking TLD — admin.email validation rejects .local / .test etc.
+      OPENAEV_ADMIN_EMAIL: ${OPENAEV_ADMIN_EMAIL:-admin@openaev.io}
+      OPENAEV_ADMIN_PASSWORD: ${OPENAEV_ADMIN_PASSWORD:-OpenAEVDevExp2026}
+      OPENAEV_ADMIN_TOKEN: ${OPENAEV_ADMIN_TOKEN:-8c23fc1c-0196-4aa1-8aa1-6e21aae6a1b5}
+      OPENAEV_HEALTHCHECK_KEY: ${OPENAEV_HEALTHCHECK_KEY:-healthcheck-dev-key}
+      OPENAEV_ADMIN_ENCRYPTION_KEY: ${OPENAEV_ADMIN_ENCRYPTION_KEY:-0OhSkm3ZvFgu3KLgGmKbVNafRuwryqeg}
+      OPENAEV_ADMIN_ENCRYPTION_SALT: ${OPENAEV_ADMIN_ENCRYPTION_SALT:-i4TJssA4vjxqXiLO}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-openaev}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-openaev}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-openaev-password}
+      MINIO_ENDPOINT: minio
+      MINIO_ACCESS-KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ACCESS-SECRET: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      OPENAEV_RABBITMQ_HOSTNAME: rabbitmq
+      OPENAEV_RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-openaev}
+      OPENAEV_RABBITMQ_PASS: ${RABBITMQ_DEFAULT_PASS:-rabbitmq-password}
+      ENGINE_URL: http://elasticsearch:9200
+      SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200
+      # Email-family injectors — point at mailpit's INTERNAL port (1025), not the
+      # host-published one (see the skill's "known gotchas" table).
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: "1025"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "false"
+      OPENAEV_MAIL_IMAP_ENABLED: "false"
+      OPENAEV_XTM_OPENCTI_ENABLE: "false"
+    ports: ["${OPENAEV_PORT:-8081}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      elasticsearch: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health?health_access_key=${OPENAEV_HEALTHCHECK_KEY:-healthcheck-dev-key}"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  xtm-composer:
+    image: filigran/xtm-composer:latest
+    platform: linux/amd64
+    environment:
+      MANAGER__ID: ${XTM_COMPOSER_ID:-99c2e494-0b37-42f2-ad42-d690e2424e78}
+      MANAGER__NAME: OpenAEV Dev XTM Composer
+      MANAGER__CREDENTIALS_KEY_FILEPATH: /keys/private_key.pem
+      OPENCTI__ENABLE: "false"
+      OPENAEV__ENABLE: "true"
+      OPENAEV__URL: http://openaev:8080
+      OPENAEV__TOKEN: ${OPENAEV_ADMIN_TOKEN:-8c23fc1c-0196-4aa1-8aa1-6e21aae6a1b5}
+      OPENAEV__DAEMON__SELECTOR: docker
+      # MUST match this compose project's network. ${COMPOSE_PROJECT_NAME} is set
+      # automatically by scripts/spawn-openaev.sh via `docker compose -p`.
+      OPENAEV__DAEMON__DOCKER__NETWORK_MODE: ${COMPOSE_PROJECT_NAME:-openaev-dev}_default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - rsa-keys:/keys:ro
+    depends_on:
+      rsa-key-generator: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      openaev: {condition: service_healthy}
+
+volumes:
+  postgres-data: {}
+  minio-data: {}
+  rabbitmq-data: {}
+  elasticsearch-data: {}
+  rsa-keys: {}
