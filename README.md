@@ -57,7 +57,7 @@ together via `--stack both`.
 | [spawn-xtm-suite](.github/skills/spawn-xtm-suite/SKILL.md) | You want to spawn OpenAEV, OpenCTI, or both together, without committing up front to a single platform |
 | [spawn-openaev-stack](.github/skills/spawn-openaev-stack/SKILL.md) | You need a local OpenAEV instance running in Docker (from a local build or a released image) |
 | [spawn-opencti-stack](.github/skills/spawn-opencti-stack/SKILL.md) | You need a local OpenCTI instance running in Docker |
-| [test-connector-with-composer](.github/skills/test-connector-with-composer/SKILL.md) | You need to validate a connector (OpenAEV injector/executor, or OpenCTI collector) end-to-end against a real XTM Composer, including catalog wiring, deployment, and delivery |
+| [test-with-suite](.github/skills/test-with-suite/SKILL.md) | You need to test a spawned suite instance live — a platform feature via UI/API, or a connector (OpenAEV injector/executor, OpenCTI collector) end-to-end through XTM Composer |
 
 ## Contributing
 

@@ -69,7 +69,7 @@ both images before starting the stack.
 The script prints the URL and admin login/password. To test a connector,
 deploy it via XTM Composer against this instance the same way you would for
 OpenAEV — see
-[test-connector-with-composer](../test-connector-with-composer/SKILL.md)
+[test-with-suite](../test-with-suite/SKILL.md)
 for the general Composer walkthrough and Docker-networking gotchas (the same
 network-attachment issue applies to connectors deployed against OpenCTI).
 

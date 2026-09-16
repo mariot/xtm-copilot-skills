@@ -67,7 +67,7 @@ compare a PR branch against `main`):
 
 The script prints the URL and admin login/password. To also test a connector
 against a real XTM Composer, deploy one from the OpenAEV catalog UI — see the
-[test-connector-with-composer](../test-connector-with-composer/SKILL.md)
+[test-with-suite](../test-with-suite/SKILL.md)
 skill for the full walkthrough and its Docker-networking gotchas.
 
 ## Known environment gotchas (reference)

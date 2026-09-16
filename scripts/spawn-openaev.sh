@@ -51,7 +51,7 @@ case "$ACTION" in
     done
     if [[ "$status" != "healthy" ]]; then
       echo "!! OpenAEV did not become healthy in time. Check: docker logs ${PROJECT}-openaev-1" >&2
-      echo "!! See the test-connector-with-composer skill for the fresh-tenant 503 workaround." >&2
+      echo "!! See the test-with-suite skill for the fresh-tenant 503 workaround." >&2
       exit 1
     fi
     port="$(grep -E '^OPENAEV_PORT=' "$ENV_FILE" | cut -d= -f2 || echo 8081)"

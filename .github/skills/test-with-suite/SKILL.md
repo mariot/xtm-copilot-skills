@@ -1,45 +1,43 @@
 ---
-name: test-connector-with-composer
+name: test-with-suite
 description: >-
-  Uses the XTM suite stacks in this repo (OpenAEV, OpenCTI, or both) plus XTM
-  Composer to test a connector end-to-end — an OpenAEV injector, an OpenCTI
-  collector/import connector, or an executor — across catalog contract,
-  Composer deployment, container startup, queue delivery, and actual payload
-  processing. Use when asked to test a connector by actually running it, or to
-  verify a catalog entry is correctly wired at runtime.
+  Uses a spawned XTM suite stack (OpenAEV, OpenCTI, or both — see
+  spawn-xtm-suite) to test something live: a platform feature/change via its
+  UI or API, or a connector (an OpenAEV injector/executor, or an OpenCTI
+  collector/import connector) deployed through XTM Composer. Composer is only
+  needed for the connector-testing path — plain platform testing doesn't
+  require it. Use when asked to verify behavior against a real running
+  instance rather than just reading code.
 ---
 
-# Test a connector with XTM Composer
+# Test against a live XTM suite instance
 
 ## When to use this
 
-- A PR adds or changes a connector's catalog contract (e.g.
-  `openaev-api/src/main/resources/resources/catalog/catalog-integrators.json`
-  for OpenAEV injectors/executors, or an OpenCTI connector manifest) and you
-  want proof it works at runtime, not just that the contract is valid.
-- You need to verify Composer can pull the connector's image, deploy it, and
-  that it registers with the platform and processes work from the queue
-  (RabbitMQ for OpenAEV injects, or the OpenCTI connector protocol).
-- The connector talks to both platforms (e.g. an OpenAEV injector that also
-  reads from OpenCTI, or vice versa) — spawn both with
-  [spawn-xtm-suite](../spawn-xtm-suite/SKILL.md) first.
+- You want to verify a platform change (backend or frontend, OpenAEV or
+  OpenCTI) actually works, by clicking through the UI or hitting the API on a
+  real running instance — no connector involved.
+- You need to validate a connector end-to-end: catalog/manifest contract,
+  Composer deployment, container startup, queue delivery, and actual payload
+  processing.
+- You're comparing behavior across a PR branch and `main`, or across OpenAEV
+  and OpenCTI.
 
-This builds on [spawn-openaev-stack](../spawn-openaev-stack/SKILL.md) and/or
-[spawn-opencti-stack](../spawn-opencti-stack/SKILL.md) (or
-[spawn-xtm-suite](../spawn-xtm-suite/SKILL.md) for both at once), which already
-wire up an isolated platform + XTM Composer stack (own Docker network, own
-volumes) — none of this touches any existing project containers/volumes on
-the machine.
+This builds on [spawn-xtm-suite](../spawn-xtm-suite/SKILL.md) (or
+[spawn-openaev-stack](../spawn-openaev-stack/SKILL.md) /
+[spawn-opencti-stack](../spawn-opencti-stack/SKILL.md) directly), which spin up
+an isolated platform + XTM Composer stack (own Docker network, own volumes) —
+none of this touches any existing project containers/volumes on the machine.
 
 ## Prerequisites
 
 - Docker (or Podman) running locally, with enough resources for the platform(s)
   you're spawning (~6-8GB RAM recommended per platform).
-- If testing an unreleased connector or platform change: the relevant branch
-  checked out locally with a buildable Dockerfile (see the individual
-  spawn-*-stack skills for `--build` usage).
-- Network access to pull base images and the connector's own image (referenced
-  by the catalog/connector manifest, e.g.
+- If testing an unreleased change: the relevant branch checked out locally
+  with a buildable Dockerfile (see the individual spawn-*-stack skills for
+  `--build` usage).
+- For connector testing only: network access to pull the connector's own
+  image (referenced by the catalog/connector manifest, e.g.
   `openaev/injector-email-smtp:rolling` or an OpenCTI connector image).
 
 ## Procedure
@@ -48,12 +46,12 @@ the machine.
 
 ```bash
 # One platform:
-./scripts/spawn-openaev.sh up -p test-connector --build /path/to/openaev-checkout
+./scripts/spawn-openaev.sh up -p suite-test --build /path/to/openaev-checkout
 # or:
-./scripts/spawn-opencti.sh up -p test-connector --build /path/to/opencti-checkout
+./scripts/spawn-opencti.sh up -p suite-test --build /path/to/opencti-checkout
 
-# Both, if the connector talks to both platforms:
-./scripts/spawn-suite.sh up --stack both -p test-connector \
+# Both, if you need cross-product behavior or a connector talking to both:
+./scripts/spawn-suite.sh up --stack both -p suite-test \
   --build-openaev /path/to/openaev-checkout --build-opencti /path/to/opencti-checkout
 ```
 
@@ -62,12 +60,24 @@ instead. Each script prints the URL + admin credentials once its platform is
 healthy. If it times out waiting for health, see the fresh-tenant 503 gotcha
 below.
 
-### Step 2 — Verify Composer registered
+### Step 2 — Testing a platform feature directly (no connector, no Composer)
+
+Log in with the admin credentials printed in Step 1 and exercise the
+feature/change via the UI, or hit the platform's REST API directly (Swagger UI
+is typically at `/api-docs` for OpenAEV; GraphQL playground at `/graphql` for
+OpenCTI). This path doesn't need Composer or any connector at all — you're
+done once you've confirmed the behavior.
+
+### Step 3 — Testing a connector (needs Composer)
+
+Skip this if you're only testing a platform feature.
+
+**3a. Verify Composer registered:**
 
 ```bash
-docker logs test-connector-openaev-xtm-composer-1 | grep -i "manager registered"
+docker logs suite-test-openaev-xtm-composer-1 | grep -i "manager registered"
 # and/or:
-docker logs test-connector-opencti-xtm-composer-1 | grep -i "manager registered"
+docker logs suite-test-opencti-xtm-composer-1 | grep -i "manager registered"
 ```
 
 (Container names follow `<project>-xtm-composer-1`; with `spawn-suite.sh` the
@@ -75,11 +85,11 @@ project is `<prefix>-openaev` / `<prefix>-opencti`.) A single early `ERROR ...
 Failed to fetch connector instances: status 400` right before `Manager
 registered: <uuid>` is a benign startup ordering artifact — ignore it.
 
-### Step 3 — Deploy the connector via the platform's UI/API
+**3b. Deploy the connector via the platform's UI/API:**
 
-Log in with the admin credentials printed in Step 1, then enable/deploy the
-connector from the catalog (OpenAEV) or connector manifest (OpenCTI), via UI
-or API. Composer will pull the referenced image and create a new container.
+Enable/deploy the connector from the catalog (OpenAEV) or connector manifest
+(OpenCTI), via UI or API. Composer will pull the referenced image and create a
+new container.
 
 **Gotcha — wrong Docker network on the spawned container:** Composer-created
 connector containers can sometimes land on the default Docker `bridge` network
@@ -99,7 +109,7 @@ Find the connector container name/id with:
 docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 ```
 
-### Step 4 — Watch the connector's own logs (not just Composer's)
+**3c. Watch the connector's own logs (not just Composer's):**
 
 ```bash
 docker logs -f <connector-container-name>
@@ -117,7 +127,7 @@ ListenQueue connecting to RabbitMQ.
 For an OpenCTI connector, look for it registering successfully and starting
 its work loop (exact log format depends on the connector).
 
-### Step 5 — Trigger real work and confirm delivery/processing
+**3d. Trigger real work and confirm delivery/processing:**
 
 For an OpenAEV inject: send a test inject from an exercise/scenario using this
 injector or executor, then watch the connector's log for it picking up and
@@ -142,7 +152,7 @@ set).
 Always tear the stack(s) down when done — they're throwaway infra:
 
 ```bash
-./scripts/spawn-suite.sh down --stack both -p test-connector
+./scripts/spawn-suite.sh down --stack both -p suite-test
 # Composer-spawned connector containers aren't part of the compose project; remove them too:
 docker ps -a --format '{{.Names}}' | grep -E '<connector-name-pattern>' | xargs -r docker rm -f
 ```

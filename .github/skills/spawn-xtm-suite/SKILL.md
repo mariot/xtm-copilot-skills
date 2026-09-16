@@ -77,6 +77,6 @@ change against a released OpenCTI.
 Each spawned stack prints its own URL and admin login/password (openaev.io /
 opencti.io email domains by default). From there, deploy and test a connector
 against either platform — see
-[test-connector-with-composer](../test-connector-with-composer/SKILL.md) for
+[test-with-suite](../test-with-suite/SKILL.md) for
 the full connector-testing walkthrough, including Docker-networking gotchas
 that apply to both platforms.
