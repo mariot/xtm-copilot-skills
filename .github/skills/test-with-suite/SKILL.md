@@ -4,10 +4,11 @@ description: >-
   Uses a spawned XTM suite stack (OpenAEV, OpenCTI, or both — see
   spawn-xtm-suite) to test something live: a platform feature/change via its
   UI or API, or a connector (an OpenAEV injector/executor, or an OpenCTI
-  collector/import connector) deployed through XTM Composer. Composer is only
-  needed for the connector-testing path — plain platform testing doesn't
-  require it. Use when asked to verify behavior against a real running
-  instance rather than just reading code.
+  collector/import connector) deployed through XTM Composer. Every spawn
+  already includes its own XTM Composer instance in one call — Composer just
+  isn't the focus unless you're specifically testing a connector through it.
+  Use when asked to verify behavior against a real running instance rather
+  than just reading code.
 ---
 
 # Test against a live XTM suite instance
@@ -57,18 +58,20 @@ none of this touches any existing project containers/volumes on the machine.
 
 Omit `--build`/`--build-openaev`/`--build-opencti` to pull the released images
 instead. Each script prints the URL + admin credentials once its platform is
-healthy. If it times out waiting for health, see the fresh-tenant 503 gotcha
-below.
+healthy. XTM Composer is spawned automatically as part of the stack in this
+same call — there's no separate step to start it, even if you don't interact
+with it directly. If the spawn times out waiting for health, see the
+fresh-tenant 503 gotcha below.
 
-### Step 2 — Testing a platform feature directly (no connector, no Composer)
+### Step 2 — Testing a platform feature directly (no connector involved)
 
 Log in with the admin credentials printed in Step 1 and exercise the
 feature/change via the UI, or hit the platform's REST API directly (Swagger UI
 is typically at `/api-docs` for OpenAEV; GraphQL playground at `/graphql` for
-OpenCTI). This path doesn't need Composer or any connector at all — you're
-done once you've confirmed the behavior.
+OpenCTI). Composer is running in the background but there's nothing to do
+with it for this path — you're done once you've confirmed the behavior.
 
-### Step 3 — Testing a connector (needs Composer)
+### Step 3 — Testing a connector through Composer
 
 Skip this if you're only testing a platform feature.
 
