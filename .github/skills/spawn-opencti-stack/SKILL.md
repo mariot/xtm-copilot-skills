@@ -27,16 +27,28 @@ compose project name.
 
 ## Procedure
 
+### Option A — released images (fastest)
+
 ```bash
 ./scripts/spawn-opencti.sh up
 ```
 
 Pulls `opencti/platform:rolling` and `opencti/worker:rolling` (or
 `$OPENCTI_IMAGE` / `$OPENCTI_WORKER_IMAGE` from `stacks/opencti/.env` if you've
-copied `.env.sample` and set them — e.g. to point at a locally built image).
+copied `.env.sample` and set them).
 
 OpenCTI's first boot (index bootstrap, migrations) is slower than OpenAEV's —
 expect a few minutes before the health check passes.
+
+### Option B — build from a local checkout (to test unreleased changes)
+
+```bash
+./scripts/spawn-opencti.sh up --build /path/to/opencti-checkout
+```
+
+Expects the standard OpenCTI monorepo layout (`opencti-platform/` and
+`opencti-worker/` top-level folders, each with their own Dockerfile) and builds
+both images before starting the stack.
 
 ### Multiple stacks at once
 
@@ -57,7 +69,7 @@ expect a few minutes before the health check passes.
 The script prints the URL and admin login/password. To test a connector,
 deploy it via XTM Composer against this instance the same way you would for
 OpenAEV — see
-[smoke-test-injector-with-composer](../smoke-test-injector-with-composer/SKILL.md)
+[test-connector-with-composer](../test-connector-with-composer/SKILL.md)
 for the general Composer walkthrough and Docker-networking gotchas (the same
 network-attachment issue applies to connectors deployed against OpenCTI).
 

@@ -4,8 +4,8 @@ description: >-
   Spins up an isolated OpenAEV Docker Compose stack (Postgres, Silo/MinIO, RabbitMQ,
   Elasticsearch, Mailpit, XTM Composer) either from a released image or built from a
   local checkout, and reports the URL + admin credentials once healthy. Use when asked
-  to run/test OpenAEV locally, verify a change against a live instance, or smoke-test
-  an injector.
+  to run/test OpenAEV locally, verify a change against a live instance, or test a
+  connector (injector, executor) end-to-end.
 ---
 
 # Spawn an OpenAEV Docker stack
@@ -13,7 +13,9 @@ description: >-
 ## When to use this
 
 - You need a real, running OpenAEV instance to click through, hit its API, or test
-  an injector/connector end-to-end — not just to read code.
+  a connector (injector/executor) end-to-end — not just to read code.
+- You need OpenAEV as one half of the full XTM suite — see
+  [spawn-xtm-suite](../spawn-xtm-suite/SKILL.md) to spawn it alongside OpenCTI.
 - A PR changes backend or frontend behavior and you want to verify it live before
   it's reviewed/merged.
 
@@ -63,9 +65,9 @@ compare a PR branch against `main`):
 
 ## Once it's up
 
-The script prints the URL and admin login/password. To also test injectors
+The script prints the URL and admin login/password. To also test a connector
 against a real XTM Composer, deploy one from the OpenAEV catalog UI — see the
-[smoke-test-injector-with-composer](../smoke-test-injector-with-composer/SKILL.md)
+[test-connector-with-composer](../test-connector-with-composer/SKILL.md)
 skill for the full walkthrough and its Docker-networking gotchas.
 
 ## Known environment gotchas (reference)
@@ -75,4 +77,4 @@ skill for the full walkthrough and its Docker-networking gotchas.
 | `pull access denied for minio/minio` | Old `minio/minio:RELEASE.*` tags delisted from Docker Hub | Already using `pgsty/silo:latest` in this stack — if you see this, check for a stale image reference |
 | `admin.email should be a valid email address` on startup | `.local`/`.test` TLDs rejected by validator | Use a real-looking TLD, e.g. `admin@openaev.io` (already the default) |
 | `/api/health` returns 503 forever on a fresh stack | No S3 object yet under the tenant's root prefix | `docker exec <project>-minio-1 sh -c "echo -n '' \| mc pipe local/openaev/2cffad3a-0001-4078-b0e2-ef74274022c3/"` |
-| Injector container crash-loops with `NameResolutionError` for `openaev` | Composer attached the container to the wrong Docker network | `docker network connect <project>_default <container>` + `docker restart <container>` |
+| Connector container crash-loops with `NameResolutionError` for `openaev` | Composer attached the container to the wrong Docker network | `docker network connect <project>_default <container>` + `docker restart <container>` |

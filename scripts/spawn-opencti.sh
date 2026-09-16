@@ -2,13 +2,17 @@
 # Spawn (or tear down) an isolated OpenCTI Docker stack for local dev/testing.
 #
 # Usage:
-#   scripts/spawn-opencti.sh up [-p <project-name>]
+#   scripts/spawn-opencti.sh up [--build <path-to-opencti-checkout>] [-p <project-name>]
 #   scripts/spawn-opencti.sh down [-p <project-name>]
 #   scripts/spawn-opencti.sh logs [-p <project-name>]
 #
-# Pulls the released `opencti/platform:rolling` / `opencti/worker:rolling` images
-# (or $OPENCTI_IMAGE / $OPENCTI_WORKER_IMAGE from stacks/opencti/.env if you
-# copied one — e.g. to point at a locally built image).
+# Without --build, pulls the released `opencti/platform:rolling` /
+# `opencti/worker:rolling` images (or $OPENCTI_IMAGE / $OPENCTI_WORKER_IMAGE
+# from stacks/opencti/.env if you copied one).
+#
+# With --build <path>, builds both images from an OpenCTI monorepo checkout at
+# <path> (expects the standard `opencti-platform/` and `opencti-worker/`
+# top-level folders, each with their own Dockerfile).
 
 set -euo pipefail
 
@@ -18,8 +22,10 @@ PROJECT="opencti-dev"
 ACTION="${1:-}"
 shift || true
 
+BUILD_PATH=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --build) BUILD_PATH="$2"; shift 2 ;;
     -p|--project) PROJECT="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -34,6 +40,14 @@ compose() {
 
 case "$ACTION" in
   up)
+    if [[ -n "$BUILD_PATH" ]]; then
+      echo "==> Building OpenCTI platform image from $BUILD_PATH/opencti-platform"
+      docker build --tag opencti-dev:latest "$BUILD_PATH/opencti-platform"
+      echo "==> Building OpenCTI worker image from $BUILD_PATH/opencti-worker"
+      docker build --tag opencti-worker-dev:latest "$BUILD_PATH/opencti-worker"
+      export OPENCTI_IMAGE=opencti-dev:latest
+      export OPENCTI_WORKER_IMAGE=opencti-worker-dev:latest
+    fi
     export COMPOSE_PROJECT_NAME="$PROJECT"
     echo "==> Starting OpenCTI stack (project: $PROJECT)"
     compose up -d
@@ -65,7 +79,7 @@ case "$ACTION" in
     compose logs -f "${@:-opencti}"
     ;;
   *)
-    echo "Usage: $0 {up|down|logs} [-p <project-name>]" >&2
+    echo "Usage: $0 {up|down|logs} [--build <path>] [-p <project-name>]" >&2
     exit 1
     ;;
 esac
